@@ -1,0 +1,272 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+</head>
+<body>
+  <canvas nx="matrix" id="sequencer" ></canvas>
+  <br/>
+  <canvas nx="dial" id="sine_freq"  min="80" max="320"></canvas>
+  <canvas nx="envelope" id="sine_envelope"></canvas>
+  <br/>
+  <canvas nx="dial" id="square_freq"  min="80" max="320"></canvas>
+  <canvas nx="envelope" id="square_envelope"></canvas>
+  <br/>
+  <canvas nx="dial" id="saw_freq"  min="80" max="320"></canvas>
+  <canvas nx="envelope" id="saw_envelope"></canvas>
+  <br/>
+  <canvas nx="dial" min="80" max="320" id="triangle_freq"></canvas>
+  <canvas nx="envelope" id="triangle_envelope"></canvas>
+  <br/>
+  <canvas nx="multislider" id="mixer"></canvas>
+  <script>
+    var bpm = 160;
+
+    var sequencer, mixer;
+    var square_freq, sine_freq, saw_freq, triangle_freq;
+    var saw_envelope, sine_envelope, square_envelope, triangle_envelope;
+    var envelopes = [];
+
+    var audio_context = window.AudioContext || window.webkitAudioContext;
+    var con = new audio_context();
+
+    // wire oscillators togethor
+    var squOsc, sineOsc, triOsc, sawOsc;
+
+    // amps / buses
+    var master, sineBus, squBus, sawBus, triBus;
+    var buses = [];
+
+    var MIN_FREQ = 80;
+    var DEFAULT_DURATION = 1.5; // 1 second
+
+
+    function setupAudioGraph(){
+        // create master stage
+        master = con.createGain();
+        master.gain.value = 0.5;
+        master.connect(con.destination);
+
+        // create busses and wire them up to master
+        sineBus = con.createGain();
+        sineBus.gain.value = 0.7;
+        sineBus.connect(master);
+        buses.push(sineBus);
+
+        squBus = con.createGain();
+        squBus.gain.value = 0.7;
+        squBus.connect(master);
+        buses.push(squBus);
+
+        sawBus = con.createGain();
+        sawBus.gain.value = 0.7;
+        sawBus.connect(master);
+        buses.push(sawBus);
+
+        triBus = con.createGain();
+        triBus.gain.value = 0.7;
+        triBus.connect(master);
+        buses.push(triBus);
+
+        console.log(buses);
+
+        // create our oscillators
+        squOsc = con.createOscillator();
+        triOsc = con.createOscillator();
+        sawOsc = con.createOscillator();
+        sineOsc = con.createOscillator();
+        sineOsc.type = 'sine';
+        sawOsc.type = 'sawtooth';
+        squOsc.type = 'square';
+        triOsc.type = 'triangle';
+        // set defaults
+        sineOsc.frequency.value = MIN_FREQ;
+        sawOsc.frequency.value = MIN_FREQ;
+        squOsc.frequency.value = MIN_FREQ;
+        triOsc.frequency.value = MIN_FREQ;
+
+        sineOsc.connect(sineBus);
+        sawOsc.connect(sawBus);
+        squOsc.connect(squBus);
+        triOsc.connect(triBus);
+
+        // Set up the envelopes
+        sine_envelope.looping = false;
+        sine_envelope.duration = DEFAULT_DURATION;
+        envelopes.push(sine_envelope);
+
+        saw_envelope.looping = false;
+        saw_envelope.duration = DEFAULT_DURATION;
+        envelopes.push(saw_envelope);
+
+        square_envelope.looping = false;
+        square_envelope.duration = DEFAULT_DURATION;
+        envelopes.push(square_envelope);
+
+        triangle_envelope.looping = false;
+        triangle_envelope.duration = DEFAULT_DURATION;
+        envelopes.push(triangle_envelope);
+    }
+
+    function adjustVolume(bus, volume){
+        console.log('adjustVolume', bus, volume);
+        bus.gain.value = volume;
+    }
+
+    function adjustFrequency(osc, data){
+        osc.frequency.value = data.value;
+    }
+
+    function startOscillators(){
+        sineOsc.start();
+        sawOsc.start();
+        squOsc.start();
+        triOsc.start();
+
+        buses.forEach(function(bus){
+           bus.gain.value = 0;
+        });
+    }
+
+    function prepareEnvelopes(){
+        envelopes.forEach(function(env){
+            // env.val = 0;
+            env.val.points = [
+                {x: 0, y:0},
+                {x: 0.25, y:0.5},
+                {x: 0.75, y:0.25},
+                {x: 1, y:0}
+            ];
+            env.start();
+        });
+    }
+
+    function stopEnvelopes(){
+        envelopes.forEach(function(env){
+            // env.val = 0;
+            env.stop();
+        });
+    }
+
+    function stopOscillators(){
+        sineOsc.stop();
+        sawOsc.stop();
+        squOsc.stop();
+        triOsc.stop();
+    }
+
+    // TODO: add a filter at the end
+
+    nx.onload = function(){
+        mixer.setNumberOfSliders(4);
+        setupAudioGraph();
+
+        mixer.on('*', function(data){
+            // console.log('mixer::data', data, buses);
+            buses.forEach(function(bus, index){
+               adjustVolume(bus, data.list[index]);
+            });
+        });
+
+        triangle_freq.on('*', function(data){
+            adjustFrequency(triOsc, data);
+        });
+
+        saw_freq.on('*', function(data){
+            adjustFrequency(sawOsc, data);
+        });
+
+        sine_freq.on('*', function(data){
+            adjustFrequency(sineOsc, data);
+        });
+
+        square_freq.on('*', function(data){
+            adjustFrequency(squOsc, data);
+        });
+
+        sequencer.sequenceMode = 'linear';
+        sequencer.row = 4;
+        sequencer.col = 8;
+        sequencer.init();
+        // sequencer.bpm = bpm;
+        sequencer.on('*', sequencerEvent);
+
+        // connect our frequency adjustments
+
+        start();
+        stop();
+    };
+
+    function floatTimeToMs(time, duration){
+        // time: float betwen 0-1
+        // duration: duration in ms we want to scale according to
+        duration = (isNumber(duration)) ? Number(duration) : 1000;
+        return duration * time;
+    }
+
+    function isNumber(val){
+        return !Number.isNaN(Number(val).valueOf());
+    }
+
+    function envToRamp(bus, envelope, duration){
+        // bus.gain.linearRampToValueAtTime(1, rampMiddle);
+        // bus.gain.linearRampToValueAtTime(0, rampEnd);
+        var points = envelope.val.points;
+        var rampPoints = []; // should be an array of objects in the form { time: int (ms), amplitude: float }
+        for (var i = 0; i<points.length; i++){
+            var pt = points[i];
+            rampPoints.push({
+                time: floatTimeToMs(pt.x, duration),
+                amplitude: pt.y
+            });
+        }
+        var now = con.currentTime; // get this last before adding each ramp
+        for (var i = 0; i<rampPoints.length; i++){
+            var pt = rampPoints[i];
+            console.log(pt);
+            bus.gain.linearRampToValueAtTime(pt.amplitude, pt.time + now);
+        }
+
+        // return to 0
+        bus.gain.linearRampToValueAtTime(1, duration/2 + now);
+        bus.gain.linearRampToValueAtTime(0, duration + now);
+        // envelope.start();
+
+        // console.log('envToRamp', rampPoints, bus, envelope);
+    }
+
+    function triggerOscillator(index){
+        // select the bus
+        console.log('triggerOscillator');
+        // play the oscillator with an envelope
+        envToRamp(buses[index], envelopes[index], DEFAULT_DURATION);
+    }
+
+    function sequencerEvent(data){
+        // console.log(data);
+        if (data.list){
+            data.list.forEach(function(item, index){
+                if (item > 0){
+                    triggerOscillator(index);
+                }
+            });
+        }
+    }
+
+    function stop(){
+        sequencer.stop();
+        stopOscillators();
+        stopEnvelopes();
+    }
+
+    function start(){
+        sequencer.sequence(bpm);
+        startOscillators();
+        prepareEnvelopes();
+    }
+
+  </script>
+</body>
+</html>
