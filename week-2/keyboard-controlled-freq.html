@@ -1,0 +1,63 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Basic keyboard controlled oscillator using nexusUI</title>
+</head>
+<body>
+    <!--Create a canvas element to attach our slider to-->
+    <canvas min="100" max="400" id="slider1" nx="slider"></canvas>
+    <br/>
+    <canvas nx="keyboard" id="keyboard"></canvas>
+</body>
+<script>
+    var slider1;
+    var keyboard;
+
+    var audio_context = window.AudioContext || window.webkitAudioContext;
+    var con = new audio_context();
+
+    var osc = con.createOscillator();
+    osc.connect(con.destination);
+    // osc.start();
+
+    var midi_to_freq = {
+        60: 261.63,
+        61: 277.18,
+        62: 293.66,
+        63: 311.13,
+        64: 329.62,
+        65: 349.22,
+        66: 369.99,
+        67: 391.99,
+        68: 415.30,
+        69: 440.00,
+        70: 466.16,
+        71: 493.88,
+    };
+
+    // midi to frequency function
+    // TODO: extend to use this function instead
+    function _mtof(note) {
+        return 440 * Math.pow(2, (note - 69) / 12);
+    }
+
+    nx.onload = function(){
+        // listen to any event on the slider and call the slider changed function
+        slider1.on('*', slider1Changed);
+        keyboard.on('*', keyboardChanged);
+    };
+
+    function slider1Changed(data){
+        console.log(data);
+        // change the frequency of the oscillator when we move the slider
+        osc.frequency.value = data.value;
+    }
+
+    function keyboardChanged(data){
+        console.log('keyboardChanged::data', data);
+        osc.frequency.value = midi_to_freq[data.note];
+    }
+</script>
+</html>
